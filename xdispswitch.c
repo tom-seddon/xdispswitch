@@ -131,7 +131,7 @@ static void RemoveDockWindowRects(Display *display,
 	Window root,parent,*children;
 	unsigned num_children;
 	if(XQueryTree(display,x11_screen_root,&root,&parent,&children,&num_children)==0)
-	    return;//bleargh
+	    continue;//bleargh
 
 	for(unsigned i=0;i<num_children;++i)
 	{
