@@ -20,6 +20,21 @@ enum {
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 
+/* XFree :( */
+#define XFREE(X)				\
+do						\
+{						\
+    if((X))					\
+    {						\
+	XFree(X);				\
+	(X)=NULL;				\
+    }						\
+}						\
+while(0)
+
+//////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////
+
 struct Rect
 {
     int x0,y0,x1,y1;
@@ -180,11 +195,7 @@ static void RemoveDockWindowRects(Display *display,
 	    }
 	}
 
-	if(children)
-	{
-	    XFree(children);
-	    children=NULL;
-	}
+	XFREE(children);
     }
 }
 
@@ -296,7 +307,7 @@ static Window GetFocusWindow(Display *display)
 
     Window w=*focus_window;
 
-    XFree(focus_window);
+    XFREE(focus_window);
     
     return w;
 }
@@ -317,9 +328,8 @@ static void GetFrameExtentsForWindow(Rect *r,Display *display,Window window)
 
 	r->y0=fe[2];
 	r->y1=fe[3];
-	
-	XFree(fe);
-	fe=NULL;
+
+	XFREE(fe);
     }
 }
 
@@ -376,8 +386,7 @@ static Bool IsWindowManagerStateSet(Display *display,Window window,Atom name)
 	    }
 	}
 
-	XFree(ws);
-	ws=NULL;
+	XFREE(ws);
     }
 
     return is_set;
