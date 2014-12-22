@@ -118,7 +118,8 @@ static void *GetWindowProperty(unsigned long *num_items,Display *display,Window 
 
 /* The _NET_WORKAREA root property is the largest rect across the
  * whole desktop that doesn't impinge on any docked windows; no good
- * for docked windows that only exist on one screen. */
+ * for docked windows that only exist on one screen. So this is a bit
+ * more careful... though hardly any more clever. */
 static void RemoveDockWindowRects(Display *display,
 				  const XineramaScreenInfo *xin_screens,
 				  Rect *xin_rects,
@@ -211,8 +212,6 @@ static int GetScreenForWindow(const Rect *wrect,const Rect *xrs,int num_xrs)
     int best=0;
     int64_t best_area=0;
 
-    /* printf("GetScreenForWindow: Window rect: %d %d %d %d\n",wrect->x0,wrect->y0,wrect->x1,wrect->y1); */
-
     for(int i=0;i<num_xrs;++i)
     {
 	Rect ir={
@@ -222,16 +221,13 @@ static int GetScreenForWindow(const Rect *wrect,const Rect *xrs,int num_xrs)
 	    min(xrs[i].y1,wrect->y1),
 	};
 
-	/* printf("    Screen %d rect: %d %d %d %d\n",i,ir.x0,ir.y0,ir.x1,ir.y1); */
+	int irw=GetRectWidth(&ir);
+	int irh=GetRectHeight(&ir);
 
-	if(ir.x1<=ir.x0||ir.y1<=ir.y0)
-	{
-	    printf("    (window is out of bounds)\n");
+	if(irw<=0||irh<=0)
 	    continue;
-	}
 
-	int64_t area=(int64_t)(ir.x1-ir.x0)*(ir.y1-ir.y0);
-	/* printf("    Window area in this screen: %ld\n",area); */
+	int64_t area=(int64_t)irw*irh;
 	if(area>best_area)
 	{
 	    best=i;
@@ -353,11 +349,7 @@ static Bool GetWindowRectForWindow(Rect *r,Display *display,Window window)
 
     /* printf("XWindowAttributes: x=%d y=%d w=%d h=%d border_width=%d\n",attrs.x,attrs.y,attrs.width,attrs.height,attrs.border_width); */
 
-    r->x0=attrs.x;
-    r->x1=attrs.x+attrs.width;
-
-    r->y0=attrs.y;
-    r->y1=attrs.y+attrs.height;
+    *r=MakeRect(attrs.x,attrs.y,attrs.width,attrs.height);
 
     Rect fe;
     GetFrameExtentsForWindow(&fe,display,window);
@@ -463,110 +455,149 @@ static void PrintRect(const Rect *r)
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 
-int main(void)
+static Bool InitialiseX(Display **display)
 {
-    Display *display=NULL;
-    Rect *xin_rects=NULL;
-    int result=EXIT_FAILURE;
-    
-    display=XOpenDisplay(NULL);
-    if(!display)
+    *display=XOpenDisplay(NULL);
+    if(!*display)
     {
 	fprintf(stderr,"FATAL: failed to open connection to display.\n");
-	goto done;
+	return False;
     }
+    
+    return True;
+}
 
-#define ATOM(X) X=XInternAtom(display,#X,True); //printf("%s=%lu\n",#X,(X));
-#include "xdispswitch_atoms.inl"
-#undef ATOM
+//////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////
 
+static Bool InitialiseXinerama(Rect **xin_rects,
+			       const XineramaScreenInfo **xin_screens,
+			       int *num_xin_screens,
+			       Display *display)
+{
     int xin_event_base,xin_error_base;
     if(!XineramaQueryExtension(display,&xin_event_base,&xin_error_base))
     {
 	fprintf(stderr,"FATAL: Xinerama not available for display.\n");
-	goto done;
+	return False;
     }
 
     if(!XineramaIsActive(display))
     {
 	fprintf(stderr,"FATAL: Xinerama not active on display.\n");
-	goto done;
+	return False;
     }
 
-    int num_xin_screens;
-    const XineramaScreenInfo *xin_screens=XineramaQueryScreens(display,&num_xin_screens);
-    if(num_xin_screens<=1)
+    *xin_screens=XineramaQueryScreens(display,num_xin_screens);
+    if(*num_xin_screens<=1)
     {
-	fprintf(stderr,"FATAL: Xinerama reports %d screens; must have 2+.\n",num_xin_screens);
-	goto done;
+	fprintf(stderr,"FATAL: Xinerama reports %d screens; must have 2+.\n",*num_xin_screens);
+	return False;
     }
 
-    xin_rects=malloc(num_xin_screens*sizeof(Rect));
-    for(int i=0;i<num_xin_screens;++i)
+    *xin_rects=malloc(*num_xin_screens*sizeof **xin_rects);
+    for(int i=0;i<*num_xin_screens;++i)
     {
-	const XineramaScreenInfo *x=&xin_screens[i];
-	xin_rects[i]=MakeRect(x->x_org,x->y_org,x->width,x->height);
+	const XineramaScreenInfo *x=&(*xin_screens)[i];
+	(*xin_rects)[i]=MakeRect(x->x_org,x->y_org,x->width,x->height);
     }
     
-    RemoveDockWindowRects(display,xin_screens,xin_rects,num_xin_screens);
+    RemoveDockWindowRects(display,*xin_screens,*xin_rects,*num_xin_screens);
 
-    vf("%d Xinerama screen(s):\n",num_xin_screens);
-    for(int i=0;i<num_xin_screens;++i)
+    vf("%d Xinerama screen(s):\n",*num_xin_screens);
+    for(int i=0;i<*num_xin_screens;++i)
     {
-	const XineramaScreenInfo *xs=&xin_screens[i];
-	const Rect *xr=&xin_rects[i];
+	const XineramaScreenInfo *xs=&(*xin_screens)[i];
+	const Rect *xr=&(*xin_rects)[i];
 
 	vf("    %d: #%d, (%d,%d) + %dx%d (rect: ",i,xs->screen_number,xs->x_org,xs->y_org,xs->width,xs->height);
 	PrintRect(xr);
 	vf(")\n");
     }
 
-    Window focus=GetFocusWindow(display);
-    if(focus==None)
+    return True;
+}
+
+//////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////
+
+int main(void)
+{
+    Display *display=NULL;
+    Rect *xin_rects=NULL;
+    int result=EXIT_FAILURE;
+
+    /* Initialize X stuff. */
+    const XineramaScreenInfo *xin_screens;
+    int num_xin_screens;
     {
-	fprintf(stderr,"FATAL: failed to get focus window.\n");
-	goto done;
+	if(!InitialiseX(&display))
+	    goto done;
+
+#define ATOM(X) X=XInternAtom(display,#X,True); //printf("%s=%lu\n",#X,(X));
+#include "xdispswitch_atoms.inl"
+#undef ATOM
+
+	if(!InitialiseXinerama(&xin_rects,&xin_screens,&num_xin_screens,display))
+	    goto done;
     }
-
-    vf("Active window ID: 0x%lX\n",focus);
-
-    if(IsWindowManagerStateSet(display,focus,_NET_WM_STATE_FULLSCREEN))
+    
+    /* Get active window. */
+    Window focus;
     {
-	fprintf(stderr,"FATAL: not touching fullscreen window.\n");
-	goto done;
+	focus=GetFocusWindow(display);
+	if(focus==None)
+	{
+	    fprintf(stderr,"FATAL: failed to get focus window.\n");
+	    goto done;
+	}
+
+	vf("Active window ID: 0x%lX\n",focus);
+
+	/* Don't mess with fullscreen windows. */
+	if(IsWindowManagerStateSet(display,focus,_NET_WM_STATE_FULLSCREEN))
+	{
+	    fprintf(stderr,"FATAL: not touching fullscreen window.\n");
+	    goto done;
+	}
     }
 
     /* Remove maximized state. */
-    Bool max_horz=IsWindowManagerStateSet(display,focus,_NET_WM_STATE_MAXIMIZED_HORZ);
-    Bool max_vert=IsWindowManagerStateSet(display,focus,_NET_WM_STATE_MAXIMIZED_VERT);
-
-    vf("Active window _NET_WM_STATE_MAXIMIZED_HORZ: %s\n",max_horz?"True":"False");
-    vf("Active window _NET_WM_STATE_MAXIMIZED_VERT: %s\n",max_vert?"True":"False");
-
-    ChangeWindowMaximizedFlags(display,focus,_NET_WM_STATE_REMOVE,max_horz,max_vert);
-
-    /* Get window details. */
-    Rect focus_rect;
-    if(!GetWindowRectForWindow(&focus_rect,display,focus))
+    Bool max_horz,max_vert;
     {
-	fprintf(stderr,"FATAL: failed to get focus window's rect.\n");
-	goto done;
+	max_horz=IsWindowManagerStateSet(display,focus,_NET_WM_STATE_MAXIMIZED_HORZ);
+	max_vert=IsWindowManagerStateSet(display,focus,_NET_WM_STATE_MAXIMIZED_VERT);
+
+	vf("Active window _NET_WM_STATE_MAXIMIZED_HORZ: %s\n",max_horz?"True":"False");
+	vf("Active window _NET_WM_STATE_MAXIMIZED_VERT: %s\n",max_vert?"True":"False");
+
+	ChangeWindowMaximizedFlags(display,focus,_NET_WM_STATE_REMOVE,max_horz,max_vert);
     }
+    
+    /* Get window details. */
+    Rect focus_rect,frame_extents;
+    {
+	if(!GetWindowRectForWindow(&focus_rect,display,focus))
+	{
+	    fprintf(stderr,"FATAL: failed to get focus window's rect.\n");
+	    goto done;
+	}
 
-    vf("Active window old rect: ");
-    PrintRect(&focus_rect);
-    vf("\n");
+	vf("Active window old rect: ");
+	PrintRect(&focus_rect);
+	vf("\n");
 
-    Rect frame_extents;
-    GetFrameExtentsForWindow(&frame_extents,display,focus);
-    vf("Frame extents: left=%d right=%d top=%d bottom=%d\n",frame_extents.x0,frame_extents.x1,frame_extents.y0,frame_extents.y1);
-
+	GetFrameExtentsForWindow(&frame_extents,display,focus);
+	vf("Frame extents: left=%d right=%d top=%d bottom=%d\n",frame_extents.x0,frame_extents.x1,frame_extents.y0,frame_extents.y1);
+    }
+    
     /* Decide which screen it's currently on, and store the
      * (proportional) coordinates of the edges. */
-    int screen_idx=GetScreenForWindow(&focus_rect,xin_rects,num_xin_screens);
-
+    int screen_idx;
     double tx0,tx1,ty0,ty1;
     {
+	screen_idx=GetScreenForWindow(&focus_rect,xin_rects,num_xin_screens);
+	
 	const Rect *xr=&xin_rects[screen_idx];
 
 	double xrw=GetRectWidth(xr);
@@ -583,19 +614,22 @@ int main(void)
 
 	ty0=(focus_rect.y0-xr->y0)/xrh;
 	ty1=(focus_rect.y1-xr->y0)/xrh;
+	
+	vf("Active window proportional positions: x0=%.3f y0=%.3f x1=%.3f y1=%.3f\n",tx0,ty0,tx1,ty1);
     }
 
-    vf("Active window proportional positions: x0=%.3f y0=%.3f x1=%.3f y1=%.3f\n",tx0,ty0,tx1,ty1);
-
     /* Pick the next screen. */
-    vf("Active window old Xinerama screen: %d\n",screen_idx);
-    screen_idx=(screen_idx+1)%num_xin_screens;
-    vf("Active window new Xinerama screen: %d\n",screen_idx);
-
+    {
+	vf("Active window old Xinerama screen: %d\n",screen_idx);
+	screen_idx=(screen_idx+1)%num_xin_screens;
+	vf("Active window new Xinerama screen: %d\n",screen_idx);
+    }
+    
     /* Generate a new rect for the window. */
     Rect new_rect;
-    const Rect *xr=&xin_rects[screen_idx];
     {
+	const Rect *xr=&xin_rects[screen_idx];
+	
 	int xrw=GetRectWidth(xr);
 	int xrh=GetRectHeight(xr);
 	
@@ -606,24 +640,21 @@ int main(void)
 
 	new_rect.x1-=frame_extents.x0+frame_extents.x1;
 	new_rect.y1-=frame_extents.y0+frame_extents.y1;
+
+	vf("Active window new rect: ");
+	PrintRect(&new_rect);
+	vf("\n");
     }
 
-    vf("Active window new rect: ");
-    PrintRect(&new_rect);
-    vf("\n");
-
-    /* printf("New rect:\n    Screen: "); */
-    /* PrintRect(xr); */
-    /* printf("\n    Window: "); */
-    /* PrintRect(&new_rect); */
-    /* printf("\n"); */
-    /* printf("    Proportional: x=%f %f y=%f %f\n",tx0,tx1,ty0,ty1); */
-
     /* Move the window to its new position. */
-    XMoveResizeWindow(display,focus,new_rect.x0,new_rect.y0,GetRectWidth(&new_rect),GetRectHeight(&new_rect));
-
+    {
+	XMoveResizeWindow(display,focus,new_rect.x0,new_rect.y0,GetRectWidth(&new_rect),GetRectHeight(&new_rect));
+    }
+    
     /* Restore maximized state. */
-    ChangeWindowMaximizedFlags(display,focus,_NET_WM_STATE_ADD,max_horz,max_vert);
+    {
+	ChangeWindowMaximizedFlags(display,focus,_NET_WM_STATE_ADD,max_horz,max_vert);
+    }
     
     result=EXIT_SUCCESS;
 
