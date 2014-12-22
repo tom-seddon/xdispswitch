@@ -16,7 +16,9 @@ it.)
 - Unix
 - X11
 - Xinerama information support (you don't need to be using Xinerama,
-  but the system needs to expose a Xinerama-style screen list)
+  but the system needs to expose a Xinerama-style screen list - I
+  believe this is standard, even if you're using something like XRandR
+  or NVidia's TwinView)
 
 * "download"
 
@@ -39,10 +41,30 @@ add a new shortcut and put the path to your compiled =xdispswitch=
 (e.g., =/home/tom/github/xdispswitch/xdispswitch=) in the Command
 field. Then give it a shortcut.
 
-* known bugs
+I think non-fallback GNOME 3 was quite similar.
 
-None yet, but X11 is far outside my sphere of expertise, so expect
-some oddities...
+Other modern window managers and/or shells probably have very similar
+functionality.
+
+Other options (that I've never tried) might be:
+
+- [[https://code.google.com/p/autokey/][autokey]]
+
+- [[https://github.com/polyethene/IronAHK][IronAHK]]
+
+* known bugs/issues
+
+- Don't know if the code to detect docking windows - task bar, system
+  menu, etc. - is quite right. (Though it works for the GNOME panels.)
+  Most serious thing that would result if it goes wrong is the window
+  ending up underneath a docked one, and/or the position and size
+  being slightly wrong.
+
+- Windows that quantize their size (e.g., emacs, terminator) don't
+  always retain their original size after being moved from a larger
+  monitor to a smaller and then back again.
+
+- Probably many more I haven't found yet.
 
 * see also...
 
