@@ -101,7 +101,13 @@ static void *GetWindowProperty(unsigned long *num_items,Display *display,Window 
 				  &bytes_after,	/* bytes_after_return */
 				  &prop);	/* prop_return */
 
-    if(result!=Success)
+    if(result==Success)
+    {
+	/* char *n=XGetAtomName(display,property); */
+	/* printf("Property %s, actual format=%d\n",n,actual_format); */
+	/* XFree(n); */
+    }
+    else
     {
 	tmp_num_items=0;
 	prop=NULL;
@@ -116,10 +122,21 @@ static void *GetWindowProperty(unsigned long *num_items,Display *display,Window 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 
+static void DoStrutEdge(int strut_start,int strut_end,
+			int xr_min,int xr_max,
+			int *dest,int new_value)
+{
+    if((xr_min>=strut_start&&xr_min<strut_end)||
+       (xr_max>=strut_start&&xr_max<strut_end))
+    {
+	*dest=new_value;
+    }
+}
+
 /* The _NET_WORKAREA root property is the largest rect across the
  * whole desktop that doesn't impinge on any docked windows; no good
  * for docked windows that only exist on one screen. So this is a bit
- * more careful... though hardly any more clever. */
+ * more careful. */
 static void RemoveDockWindowRects(Display *display,
 				  const XineramaScreenInfo *xin_screens,
 				  Rect *xin_rects,
@@ -127,6 +144,7 @@ static void RemoveDockWindowRects(Display *display,
 {
     for(int x11_screen_idx=0;x11_screen_idx<ScreenCount(display);++x11_screen_idx)
     {
+	Screen *x11_screen=ScreenOfDisplay(display,x11_screen_idx);
 	Window x11_screen_root=RootWindow(display,x11_screen_idx);
 
 	Window root,parent,*children;
@@ -137,65 +155,104 @@ static void RemoveDockWindowRects(Display *display,
 	for(unsigned i=0;i<num_children;++i)
 	{
 	    Window window=children[i];
+	    
+	    long left,right,top,bottom;
+	    long left_start_y,left_end_y;
+	    long right_start_y,right_end_y;
+	    long top_start_x,top_end_x;
+	    long bottom_start_x,bottom_end_x;
 
-	    unsigned long num_types;
-	    Atom *types=GetWindowProperty(&num_types,display,window,_NET_WM_WINDOW_TYPE);
-
-	    Bool is_dock=False;
-
-	    for(unsigned long j=0;j<num_types;++j)
+	    Bool got_strut=False;
+	    long *strut=GetWindowProperty(NULL,display,window,_NET_WM_STRUT_PARTIAL);
+	    if(strut)
 	    {
-		if(types[j]==_NET_WM_WINDOW_TYPE_DOCK)
+		got_strut=True;
+
+		left=strut[0];
+		right=strut[1];
+		top=strut[2];
+		bottom=strut[3];
+		left_start_y=strut[4];
+		left_end_y=strut[5];
+		right_start_y=strut[6];
+		right_end_y=strut[7];
+		top_start_x=strut[8];
+		top_end_x=strut[9];
+		bottom_start_x=strut[10];
+		bottom_end_x=strut[11];
+		
+		XFREE(strut);
+	    }
+	    else
+	    {
+		strut=GetWindowProperty(NULL,display,window,_NET_WM_STRUT);
+
+		if(strut)
 		{
-		    is_dock=True;
-		    break;
+		    got_strut=True;
+
+		    left=strut[0];
+		    right=strut[1];
+		    top=strut[2];
+		    bottom=strut[3];
+
+		    // TODO: WidthOfScreen/HeightOfScreen? Is that
+		    // what you're supposed to do?
+			
+		    left_start_y=right_start_y=0;
+		    left_end_y=right_end_y=HeightOfScreen(x11_screen);
+
+		    top_start_x=bottom_start_x=0;
+		    top_end_x=bottom_end_x=WidthOfScreen(x11_screen);
+			
+		    XFREE(strut);
 		}
 	    }
 
-	    XFREE(types);
-
-	    if(is_dock)
+	    if(got_strut)
 	    {
-		XWindowAttributes attrs;
-		if(XGetWindowAttributes(display,window,&attrs)==0)
-		    continue;//bleargh
+		/* printf("left=%ld\n",left); */
+		/* printf("right=%ld\n",right); */
+		/* printf("top=%ld\n",top); */
+		/* printf("bottom=%ld\n",bottom); */
+		/* printf("left_start_y=%ld\n",left_start_y); */
+		/* printf("left_end_y=%ld\n",left_end_y); */
+		/* printf("right_start_y=%ld\n",right_start_y); */
+		/* printf("right_end_y=%ld\n",right_end_y); */
+		/* printf("top_start_x=%ld\n",top_start_x); */
+		/* printf("top_end_x=%ld\n",top_end_x); */
+		/* printf("bottom_start_x=%ld\n",bottom_start_x); */
+		/* printf("bottom_end_x=%ld\n",bottom_end_x); */
 
-		if(attrs.map_state!=IsViewable)
-		    continue;
-
+		/* This system only really seems to make sense for
+		 * rectangular desktops. Say you have a window with a
+		 * top of 4, that has begin and end Xs making it span
+		 * two monitors that have different Y origins... how
+		 * would that work? This code here assumes that the
+		 * reserved space starts at the edges of the screen
+		 * rect, and if that doesn't overlap the Xinerama
+		 * monitor's area, you don't see it.
+		 *
+		 * I'm not really convinced I'm doing this properly,
+		 * but it works - or seems to - for the GNOME
+		 * stuff. */
+		
 		for(int j=0;j<num_xin_screens;++j)
 		{
-		    const XineramaScreenInfo *xs=&xin_screens[j];
 		    Rect *xr=&xin_rects[j];
 
-		    if(attrs.x==xs->x_org&&
-		       attrs.y==xs->y_org&&
-		       attrs.width==xs->width)
-		    {
-			/* Docked to the top. */
-			xr->y0=max(xr->y0,attrs.y+attrs.height);
-		    }
-		    else if(attrs.y==xs->x_org&&
-			    attrs.y==xs->y_org+xs->height-attrs.height&&
-			    attrs.width==xs->width)
-		    {
-			/* Docked to the bottom. */
-			xr->y1=min(xr->y1,attrs.y);
-		    }
-		    else if(attrs.x==xs->x_org&&
-			    attrs.y==xs->y_org&&
-			    attrs.height==xs->height)
-		    {
-			/* Docked to the left. */
-			xr->x0=max(xr->x0,attrs.x+attrs.width);
-		    }
-		    else if(attrs.x==xs->x_org+xs->width-attrs.width&&
-			    attrs.y==xs->y_org&&
-			    attrs.height==xs->height)
-		    {
-			/* Docked to the right. */
-			xr->x1=min(xr->x1,attrs.x);
-		    }
+		    DoStrutEdge(top_start_x,top_end_x,
+				xr->x0,xr->x1,
+				&xr->y0,max(xr->y0,top));
+		    DoStrutEdge(bottom_start_x,bottom_end_x,
+				xr->x0,xr->x1,
+				&xr->y1,min(xr->y1,HeightOfScreen(x11_screen)-bottom));
+		    DoStrutEdge(left_start_y,left_end_y,
+				xr->y0,xr->y1,
+				&xr->x0,max(xr->x0,left));
+		    DoStrutEdge(right_start_y,right_end_y,
+				xr->y0,xr->y1,
+				&xr->x1,min(xr->x1,WidthOfScreen(x11_screen)-right));
 		}
 	    }
 	}
