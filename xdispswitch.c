@@ -137,60 +137,64 @@ static void RemoveDockWindowRects(Display *display,
 	{
 	    Window window=children[i];
 
-	    if(_NET_WM_WINDOW_TYPE==None||_NET_WM_WINDOW_TYPE_DOCK==None)
+	    unsigned long num_types;
+	    Atom *types=GetWindowProperty(&num_types,display,window,_NET_WM_WINDOW_TYPE);
+
+	    Bool is_dock=False;
+
+	    for(unsigned long j=0;j<num_types;++j)
 	    {
-		/* This is a bit odd, but there you go. No point holding the
-		 * whole thing to ransom over it. */
-		continue;
+		if(types[j]==_NET_WM_WINDOW_TYPE_DOCK)
+		{
+		    is_dock=True;
+		    break;
+		}
 	    }
 
-	    XTextProperty wm_window_type;
-	    if(XGetTextProperty(display,window,&wm_window_type,_NET_WM_WINDOW_TYPE)==0)
-		continue;
+	    XFREE(types);
 
-	    Atom type=*(Atom *)wm_window_type.value;
-	    if(type!=_NET_WM_WINDOW_TYPE_DOCK)
-		continue;
-	    
-	    XWindowAttributes attrs;
-	    if(XGetWindowAttributes(display,window,&attrs)==0)
-		continue;//bleargh
-
-	    if(attrs.map_state!=IsViewable)
-		continue;
-
-	    for(int j=0;j<num_xin_screens;++j)
+	    if(is_dock)
 	    {
-		const XineramaScreenInfo *xs=&xin_screens[j];
-		Rect *xr=&xin_rects[j];
+		XWindowAttributes attrs;
+		if(XGetWindowAttributes(display,window,&attrs)==0)
+		    continue;//bleargh
 
-		if(attrs.x==xs->x_org&&
-		   attrs.y==xs->y_org&&
-		   attrs.width==xs->width)
+		if(attrs.map_state!=IsViewable)
+		    continue;
+
+		for(int j=0;j<num_xin_screens;++j)
 		{
-		    /* Docked to the top. */
-		    xr->y0=max(xr->y0,attrs.y+attrs.height);
-		}
-		else if(attrs.y==xs->x_org&&
-			attrs.y==xs->y_org+xs->height-attrs.height&&
-			attrs.width==xs->width)
-		{
-		    /* Docked to the bottom. */
-		    xr->y1=min(xr->y1,attrs.y);
-		}
-		else if(attrs.x==xs->x_org&&
-			attrs.y==xs->y_org&&
-			attrs.height==xs->height)
-		{
-		    /* Docked to the left. */
-		    xr->x0=max(xr->x0,attrs.x+attrs.width);
-		}
-		else if(attrs.x==xs->x_org+xs->width-attrs.width&&
-			attrs.y==xs->y_org&&
-			attrs.height==xs->height)
-		{
-		    /* Docked to the right. */
-		    xr->x1=min(xr->x1,attrs.x);
+		    const XineramaScreenInfo *xs=&xin_screens[j];
+		    Rect *xr=&xin_rects[j];
+
+		    if(attrs.x==xs->x_org&&
+		       attrs.y==xs->y_org&&
+		       attrs.width==xs->width)
+		    {
+			/* Docked to the top. */
+			xr->y0=max(xr->y0,attrs.y+attrs.height);
+		    }
+		    else if(attrs.y==xs->x_org&&
+			    attrs.y==xs->y_org+xs->height-attrs.height&&
+			    attrs.width==xs->width)
+		    {
+			/* Docked to the bottom. */
+			xr->y1=min(xr->y1,attrs.y);
+		    }
+		    else if(attrs.x==xs->x_org&&
+			    attrs.y==xs->y_org&&
+			    attrs.height==xs->height)
+		    {
+			/* Docked to the left. */
+			xr->x0=max(xr->x0,attrs.x+attrs.width);
+		    }
+		    else if(attrs.x==xs->x_org+xs->width-attrs.width&&
+			    attrs.y==xs->y_org&&
+			    attrs.height==xs->height)
+		    {
+			/* Docked to the right. */
+			xr->x1=min(xr->x1,attrs.x);
+		    }
 		}
 	    }
 	}
