@@ -1,0 +1,49 @@
+* xdispswitch
+
+=xdispswitch= picks up the active X11 window and moves it to the next
+Xinerama monitor it can find. It will try to preserve the
+monitor-relative size and position, avoid stepping on any window
+manager panels, and generally not make a mess. Bind it to a key and
+take control of your windows.
+
+(I used to use a GNOME 3 shell extension to do this, but one day a
+system upgrade left me with GNOME 3 permanently in fallback mode, in
+which shell extensions don't seem to work. So I wrote this to replace
+it.)
+
+* system requirements
+
+- Unix
+- X11
+- Xinerama information support (you don't need to be using Xinerama,
+  but the system needs to expose a Xinerama-style screen list)
+
+* "download"
+
+This is Unix, so you get to build it yourself.
+
+1. Clone repo
+
+2. =make=
+
+The binary is called =xdispswitch=.
+
+* "installation"
+
+This is Unix, so you get to figure it out on your own...
+
+For GNOME 3's fallback mode: go to the /Applications/ menu, /System
+Tools/, /Preferences/, /System/. Visit the /Keyboard/ section,
+/Shortcuts/ tab, and select /Custom Shortcuts/. Click the + button to
+add a new shortcut and put the path to your compiled =xdispswitch=
+(e.g., =/home/tom/github/xdispswitch/xdispswitch=) in the Command
+field. Then give it a shortcut.
+
+* known bugs
+
+None yet, but X11 is far outside my sphere of expertise, so expect
+some oddities...
+
+* see also...
+
+[[https://github.com/tom-seddon/dispswitch][=dispswitch=]], a very similar program for Windows.
