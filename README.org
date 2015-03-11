@@ -52,6 +52,15 @@ Other options (that I've never tried) might be:
 
 - [[https://github.com/polyethene/IronAHK][IronAHK]]
 
+* Command line options
+
+Specify =-h= to get brief command line help.
+
+Specify =-v= to have =xdispswitch= print stuff to stdout.
+
+Specify =-l FILE= to have =xdispswitch= append stuff to a file called
+=FILE=. (This file will grow indefinitely - so best put it in /tmp.)
+
 * known bugs/issues
 
 - Don't know if the code to detect docking windows - task bar, system

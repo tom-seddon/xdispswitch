@@ -488,17 +488,33 @@ static void ChangeWindowMaximizedFlags(Display *display,Window window,long actio
 
 //static Bool g_verbose=False;
 static Bool g_verbose=True;
+static const char * g_log_fname=NULL;
 
 static void vf(const char *fmt,...)
 {
-    if(!g_verbose)
-	return;
-
     va_list v;
 
-    va_start(v,fmt);
-    vprintf(fmt,v);
-    va_end(v);
+    if(g_verbose)
+    {
+	va_start(v,fmt);
+	vprintf(fmt,v);
+	va_end(v);
+    }
+
+    if(g_log_fname)
+    {
+	FILE *f=fopen(g_log_fname,"at");
+
+	if(f)
+	{
+	    va_start(v,fmt);
+	    vfprintf(f,fmt,v);
+	    va_end(v);
+
+	    fclose(f);
+	    f=NULL;
+	}
+    }
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -578,11 +594,85 @@ static Bool InitialiseXinerama(Rect **xin_rects,
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 
-int main(void)
+struct Options
+{
+    Bool help;
+    const char *log_fname;
+    Bool verbose;
+};
+typedef struct Options Options;
+
+static const Options DEFAULT_OPTIONS={
+    .help=False,
+    .log_fname=NULL,
+    .verbose=False,
+};
+
+static Bool DoOptions(Options *options,int argc,char *argv[])
+{
+    *options=DEFAULT_OPTIONS;
+
+    for(;;)
+    {
+	char c=getopt(argc,argv,"hl:v");
+
+	if(c=='h')
+	    options->help=True;
+	else if(c=='l')
+	    options->log_fname=optarg;
+	else if(c=='v')
+	    options->verbose=True;
+	else if(c==-1)
+	    return True;
+	else
+	    return False;
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////
+
+static void PrintHelp(const char *argv0)
+{
+    printf("Syntax: %s -h -l LOGFILE -v\n",argv0);
+    printf("-h          display help\n");
+    printf("-l LOGFILE  log stuff to LOGFILE\n");
+    printf("-v          log stuff to stdout\n");
+}
+
+//////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////
+
+int main(int argc,char *argv[])
 {
     Display *display=NULL;
     Rect *xin_rects=NULL;
     int result=EXIT_FAILURE;
+
+    /* Command line stuff. */
+    {
+	Options options;
+	Bool good=DoOptions(&options,argc,argv);
+	if(!good||options.help)
+	{
+	    PrintHelp(argv[0]);
+
+	    if(good)
+		return EXIT_SUCCESS;
+	    else
+		return EXIT_FAILURE;
+	}
+
+	g_log_fname=options.log_fname;
+
+	if(g_log_fname)
+	{
+	    /* Write separator to log file only. */
+	    vf("----------------------------------------------------------------\n");
+	}
+	
+	g_verbose=options.verbose;
+    }
 
     /* Initialize X stuff. */
     const XineramaScreenInfo *xin_screens;
