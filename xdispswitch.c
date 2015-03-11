@@ -6,6 +6,18 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/Xinerama.h>
+#include <unistd.h>
+
+//////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////
+
+/* If true, (try to) handle maximized windows. Do this by
+ * un-maximizing, recording the window size, moving, then
+ * re-maximizing - thus retaing the unmaximized shape.
+ *
+ * There's a #define for this because I am still suspicious about it.
+ */
+#define HANDLE_MAXIMIZED (1)
 
 //////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////
@@ -477,7 +489,7 @@ static void ChangeWindowMaximizedFlags(Display *display,Window window,long actio
 
 	XSendEvent(display,
 		   XDefaultRootWindow(display),
-		   False,
+		   True,
 		   SubstructureNotifyMask|SubstructureRedirectMask,
 		   &e);
     }
@@ -709,35 +721,64 @@ int main(int argc,char *argv[])
 	}
     }
 
+    /* Get original window details. */
+    Rect old_rect;
+    {
+	if(!GetWindowRectForWindow(&old_rect,display,focus))
+	{
+	    fprintf(stderr,"FATAL: failed to get focus window's old rect.\n");
+	    goto done;
+	}
+    }
+
     /* Remove maximized state. */
     Bool max_horz,max_vert;
     {
+#if HANDLE_MAXIMIZED
 	max_horz=IsWindowManagerStateSet(display,focus,_NET_WM_STATE_MAXIMIZED_HORZ);
 	max_vert=IsWindowManagerStateSet(display,focus,_NET_WM_STATE_MAXIMIZED_VERT);
 
-	vf("Active window _NET_WM_STATE_MAXIMIZED_HORZ: %s\n",max_horz?"True":"False");
-	vf("Active window _NET_WM_STATE_MAXIMIZED_VERT: %s\n",max_vert?"True":"False");
+	vf("Before: Active window _NET_WM_STATE_MAXIMIZED_HORZ: %s\n",max_horz?"True":"False");
+	vf("Before: Active window _NET_WM_STATE_MAXIMIZED_VERT: %s\n",max_vert?"True":"False");
 
 	ChangeWindowMaximizedFlags(display,focus,_NET_WM_STATE_REMOVE,max_horz,max_vert);
+#else
+	/* Just pretend it wasn't maximized. The post-maximize loop
+	 * will drop out immediately and the maximize flags won't be
+	 * changed later. */
+	max_horz=False;
+	max_vert=False;
+#endif
     }
-    
-    /* Get window details. */
-    Rect focus_rect,frame_extents;
+
+    /* Spin until any maximization has been removed. */
+    if(max_horz||max_vert)
     {
-	if(!GetWindowRectForWindow(&focus_rect,display,focus))
+	int num_tries=0;
+	while(IsWindowManagerStateSet(display,focus,_NET_WM_STATE_MAXIMIZED_HORZ)||
+	      IsWindowManagerStateSet(display,focus,_NET_WM_STATE_MAXIMIZED_VERT))
 	{
-	    fprintf(stderr,"FATAL: failed to get focus window's rect.\n");
-	    goto done;
+	    ++num_tries;
 	}
+	
+	vf("After: Active window _NET_WM_STATE_MAXIMIZED_HORZ: %s\n",IsWindowManagerStateSet(display,focus,_NET_WM_STATE_MAXIMIZED_HORZ)?"True":"False");
+	vf("After: Active window _NET_WM_STATE_MAXIMIZED_VERT: %s\n",IsWindowManagerStateSet(display,focus,_NET_WM_STATE_MAXIMIZED_VERT)?"True":"False");
+	vf("(num polls: %d)\n",num_tries);
+    }
 
-	vf("Active window old rect: ");
-	PrintRect(&focus_rect);
-	vf("\n");
+    /* Get unmaximized window details. */
+    Rect focus_rect;
+    {
+	GetWindowRectForWindow(&focus_rect,display,focus);
+    }
 
+    /* Get window details. */
+    Rect frame_extents;
+    {
 	GetFrameExtentsForWindow(&frame_extents,display,focus);
 	vf("Frame extents: left=%d right=%d top=%d bottom=%d\n",frame_extents.x0,frame_extents.x1,frame_extents.y0,frame_extents.y1);
     }
-    
+
     /* Decide which screen it's currently on, and store the
      * (proportional) coordinates of the edges. */
     int screen_idx;
@@ -793,16 +834,14 @@ int main(int argc,char *argv[])
 	vf("\n");
     }
 
-    /* Move the window to its new position. */
+    /* Move the window to its new position and restore maximized state. */
     {
 	XMoveResizeWindow(display,focus,new_rect.x0,new_rect.y0,GetRectWidth(&new_rect),GetRectHeight(&new_rect));
-    }
-    
-    /* Restore maximized state. */
-    {
 	ChangeWindowMaximizedFlags(display,focus,_NET_WM_STATE_ADD,max_horz,max_vert);
     }
     
+    XFlush(display);
+
     result=EXIT_SUCCESS;
 
 done:
