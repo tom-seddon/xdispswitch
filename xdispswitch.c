@@ -713,6 +713,18 @@ int main(int argc,char *argv[])
 
 	vf("Active window ID: 0x%lX\n",focus);
 
+	/* if(focus==XRootWindowOfScreen(XDefaultScreenOfDisplay(display))) */
+	/* { */
+	/*     fprintf(stderr,"FATAL: not touching root window.\n"); */
+	/*     goto done; */
+	/* } */
+
+	if(IsWindowManagerStateSet(display,focus,_NET_WM_STATE_STICKY))
+	{
+	    fprintf(stderr,"FATAL: not touching sticky window.\n");
+	    goto done;
+	}
+
 	/* Don't mess with fullscreen windows. */
 	if(IsWindowManagerStateSet(display,focus,_NET_WM_STATE_FULLSCREEN))
 	{
